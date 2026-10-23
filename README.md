@@ -247,18 +247,20 @@ cannot be edited** — the only way to change anchors is to publish a new test c
 ### Migrations
 
 `openDb()` always applies the schema additively (`CREATE TABLE/INDEX/TRIGGER IF NOT EXISTS`) —
-safe on every boot, but it cannot alter an *existing* table's columns. If it detects an on-disk
-database that predates the 55-item columns, it throws immediately at boot with
-`Run: npm run migrate` rather than starting into a half-broken state that only fails later on
-the first query that touches a missing column.
+safe on every boot, but it cannot alter an *existing* table's columns by itself. Beyond that,
+boot behaves differently depending on how big a gap there is:
 
-`npm run migrate` performs the actual upgrade. Two paths, chosen by what's already there:
-- v2 → v3 (`students.registered`, for name registration) is one additive column, applied via
-  `ALTER TABLE` **regardless of how much real data exists** — nothing is dropped or rewritten.
-- v1 → v2 changed `CHECK`/`NOT NULL` constraints on existing columns, which `ALTER TABLE`
-  can't do, so that jump still needs a destructive rebuild — and only runs when the database
-  has **zero real submissions or results** (fresh or demo-only); otherwise it refuses outright
-  and tells you to handle it by hand. There's never a silent data-loss path.
+- **v2 → v3** (`students.registered`, for name registration) is a single additive column, proven
+  safe at any data volume (see `test/migrations.test.js`). `openDb()` applies it automatically
+  on boot — this matters for a platform that redeploys on `git push` with no separate release
+  step: without self-healing, shipping v3 code against a still-v2 database would crash-loop a
+  live deployment until someone remembers to run `npm run migrate` by hand.
+- **v1 → v2 or newer** changed `CHECK`/`NOT NULL` constraints on *existing* columns, which
+  `ALTER TABLE` can't do — that jump needs a destructive rebuild, so it is deliberately **not**
+  auto-applied. `openDb()` throws `SchemaOutOfDate` immediately at boot instead, and only
+  `npm run migrate`, run explicitly, can perform it — and even then, only when the database has
+  **zero real submissions or results** (fresh or demo-only); otherwise it refuses outright and
+  tells you to handle it by hand. There's never a silent data-loss path.
 
 ---
 

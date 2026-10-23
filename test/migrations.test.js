@@ -198,14 +198,26 @@ test('ensureSchemaUpToDate throws SchemaOutOfDate for a stale on-disk database w
   }
 });
 
-test('ensureSchemaUpToDate also throws for a v2-shaped on-disk database (needs the ALTER too)', () => {
+test('openDb() self-heals a v2-shaped on-disk database instead of crash-looping a live deployment', () => {
+  // This is the exact shape a running production deployment is in right
+  // after a `git push` ships v3 code but before anyone has a chance to run
+  // `npm run migrate` by hand — e.g. a platform that redeploys on push with
+  // no separate release-command step. The v2->v3 step is proven additive
+  // and safe at any data volume (see the 'altered' tests above), so this
+  // case must NOT throw — unlike the v1 case, which still does.
   const dbPath = path.join(os.tmpdir(), `nc55-migration-test-v2-${Date.now()}.sqlite`);
   try {
     const raw = new DatabaseSync(dbPath);
     raw.exec(V2_SCHEMA);
+    raw.exec("INSERT INTO students (telegram_id, full_name) VALUES (42, 'Real Student')");
     raw.close();
 
-    assert.throws(() => openDb(dbPath), SchemaOutOfDate);
+    const db = openDb(dbPath); // must not throw
+    assert.equal(inspectSchema(db).upToDate, true);
+    const student = db.prepare('SELECT * FROM students WHERE telegram_id = 42').get();
+    assert.equal(student.full_name, 'Real Student'); // pre-existing data survived
+    assert.equal(student.registered, 0);
+    db.close();
   } finally {
     fs.rmSync(dbPath, { force: true });
     fs.rmSync(`${dbPath}-wal`, { force: true });

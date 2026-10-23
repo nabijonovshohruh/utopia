@@ -73,14 +73,30 @@ function stamp(db) {
   db.prepare('INSERT OR REPLACE INTO schema_meta (id, version) VALUES (1, ?)').run(CURRENT_VERSION);
 }
 
+const V2_TO_V3_ALTER =
+  'ALTER TABLE students ADD COLUMN registered INTEGER NOT NULL DEFAULT 0 CHECK (registered IN (0, 1))';
+
 /**
- * Called on every openDb(). Free and non-destructive: if the tables are
- * already fully current-shaped (true for every brand-new database, since
- * schema.sql creates them that way from scratch) but just haven't been
- * stamped yet, stamp them. Otherwise leave a stale on-disk database
- * untouched and throw SchemaOutOfDate — fail loudly and immediately at boot
- * rather than letting the process start and fail confusingly on the first
- * query that touches a column which doesn't exist yet.
+ * Called on every openDb() — including by a running deployment picking up a
+ * new release, where nobody necessarily runs `npm run migrate` by hand
+ * before the process restarts (e.g. a platform that just redeploys on
+ * push). Two cases:
+ *
+ *   - Fully current-shaped but unstamped (every brand-new database, since
+ *     schema.sql creates it that way from scratch): stamp it, free.
+ *   - v2-shaped but missing v3's one additive column: apply the same
+ *     ALTER TABLE migrate() uses. This is deliberately NOT treated the same
+ *     as the v1 case below — it's proven safe at any data volume (see
+ *     migrate()'s 'altered' path and test/migrations.test.js), so silently
+ *     crash-looping a live deployment until a human remembers to run the
+ *     migration script by hand would be strictly worse than just applying
+ *     it here.
+ *
+ * A v1-shaped (or older) database is the one case left untouched: that
+ * upgrade is destructive (see migrate()) and only safe to run when there's
+ * zero real data, which is exactly the kind of judgement call that belongs
+ * in an explicit, operator-run step — not something to silently decide on
+ * every boot. That case still throws SchemaOutOfDate.
  */
 export function ensureSchemaUpToDate(db) {
   const info = inspectSchema(db);
@@ -88,6 +104,11 @@ export function ensureSchemaUpToDate(db) {
   if (info.hasV2Shape && info.hasV3Shape) {
     stamp(db);
     return { ...info, version: CURRENT_VERSION, upToDate: true };
+  }
+  if (info.hasV2Shape) {
+    db.exec(V2_TO_V3_ALTER);
+    stamp(db);
+    return { ...info, hasV3Shape: true, version: CURRENT_VERSION, upToDate: true };
   }
   throw new SchemaOutOfDate();
 }
@@ -113,9 +134,7 @@ export function migrate(db) {
   }
 
   if (info.hasV2Shape) {
-    db.exec(
-      'ALTER TABLE students ADD COLUMN registered INTEGER NOT NULL DEFAULT 0 CHECK (registered IN (0, 1))',
-    );
+    db.exec(V2_TO_V3_ALTER);
     stamp(db);
     return { action: 'altered', version: CURRENT_VERSION };
   }
