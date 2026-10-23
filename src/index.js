@@ -4,6 +4,7 @@ import { openDb } from './db/index.js';
 import { adminRoutes } from './bot/admin.js';
 import { studentRoutes } from './bot/student.js';
 import { startWithPollingResilience } from './bot/startResilient.js';
+import { createServer } from './webapp/server.js';
 import { ENGINE_VERSION } from './services/rasch.js';
 
 // Fail with an actionable message rather than an opaque Telegram 404 later.
@@ -20,6 +21,43 @@ if (errors.length) {
 }
 
 const db = openDb(config.dbPath);
+
+// ---------------------------------------------------------------------------
+// Mini App HTTP server — started FIRST and independently of the bot below.
+//
+// Railway (and most platforms) healthcheck a deployment by hitting $PORT. If
+// this process only ran the bot, there would be nothing listening on that
+// port at all (long polling makes outbound requests to Telegram; it opens no
+// inbound listener), which is exactly what produces "Application failed to
+// respond" — not a crash, just nothing ever answering. Bound explicitly to
+// 0.0.0.0: Node's listen(port, callback) 2-arg form leaves the host
+// unspecified, which can resolve to a binding Railway's proxy can't reach.
+// ---------------------------------------------------------------------------
+const miniAppServer = createServer(db, { botToken: config.botToken });
+miniAppServer.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\nPort ${config.miniAppPort} is already in use. Set PORT or MINIAPP_PORT to a free one.\n`);
+  } else if (err.code === 'EACCES') {
+    console.error(`\nPermission denied binding port ${config.miniAppPort} (ports <1024 usually need root).\n`);
+  } else {
+    console.error('\nMini App server failed to start:', err.message, '\n');
+  }
+  process.exit(1);
+});
+await new Promise((resolve) => miniAppServer.listen(config.miniAppPort, '0.0.0.0', resolve));
+console.log(`Mini App server listening on 0.0.0.0:${config.miniAppPort}`);
+if (config.miniAppPublicUrl) {
+  console.log(`Public URL configured: ${config.miniAppPublicUrl}`);
+} else {
+  console.log(
+    'MINIAPP_PUBLIC_URL is not set — the bot will fall back to chat-based answer entry. ' +
+      'Put this deployment behind HTTPS and set MINIAPP_PUBLIC_URL to enable the "Open Mini App" button.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Telegram bot
+// ---------------------------------------------------------------------------
 const bot = new Bot(config.botToken);
 
 // Admin routes run first and simply fall through for non-admins.
@@ -53,7 +91,7 @@ let shuttingDown = false;
 const shutdown = (signal) => {
   console.log(`\n${signal} — shutting down`);
   shuttingDown = true;
-  bot.stop().finally(() => {
+  Promise.all([bot.stop(), new Promise((resolve) => miniAppServer.close(resolve))]).finally(() => {
     db.close();
     process.exit(0);
   });
@@ -69,12 +107,23 @@ process.once('SIGTERM', () => shutdown('SIGTERM'));
 // which only knows how to handle conflict errors, not arbitrary ones.
 await bot.api.deleteWebhook({ drop_pending_updates: true });
 
-// `drop_pending_updates: true` here clears any update backlog from before
-// this process started, but does not prevent a live getUpdates overlap
-// with another still-running process — that's what
-// startWithPollingResilience handles (see src/bot/startResilient.js for
-// the full rationale).
-await startWithPollingResilience(() => bot.start({ drop_pending_updates: true }), {
+// Deliberately NOT awaited at the top level: if this ultimately fails (the
+// 409 retry loop exhausts its attempts, or hits a genuinely unexpected
+// error), the failure must not become an unhandled rejection that crashes
+// this process — doing so would take the Mini App server down with it,
+// which defeats the entire point of running it independently of Telegram
+// polling health. `drop_pending_updates: true` here clears any update
+// backlog from before this process started, but does not prevent a live
+// getUpdates overlap with another still-running process — that's what
+// startWithPollingResilience handles (see src/bot/startResilient.js).
+startWithPollingResilience(() => bot.start({ drop_pending_updates: true }), {
   isConflict: (err) => err instanceof GrammyError && err.error_code === 409,
   isShuttingDown: () => shuttingDown,
+}).catch((err) => {
+  console.error(
+    '\nFATAL: the Telegram bot could not start (see error below). The Mini App server keeps ' +
+      'running regardless, but chat commands are unavailable until this is fixed and the ' +
+      'process is restarted.\n',
+    err,
+  );
 });

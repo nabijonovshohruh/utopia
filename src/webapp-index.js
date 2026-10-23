@@ -2,6 +2,14 @@ import { config, checkConfig } from './config.js';
 import { openDb } from './db/index.js';
 import { createServer } from './webapp/server.js';
 
+// `npm start` (src/index.js) runs the bot AND this same Mini App server
+// together in one process now — the normal way to deploy this as a single
+// service. This file is the OPTIONAL split-deployment path: run it as its
+// own process/service if you want the Mini App's uptime and scaling
+// independent of the bot (e.g. a bot restart shouldn't interrupt in-flight
+// Mini App submissions). Don't run both `npm start` and `npm run webapp`
+// on the same machine — they'd both try to bind the same PORT.
+//
 // The Mini App's submission endpoint verifies requests with the bot token
 // (see src/webapp/initdata.js), so it needs that — but not ADMIN_IDS, which
 // this process never touches.

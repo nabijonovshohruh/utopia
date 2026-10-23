@@ -14,14 +14,24 @@ Supports two test shapes:
 One runtime dependency (`grammy`). Storage is Node's built-in `node:sqlite`, so there is
 nothing to compile and no database server to run.
 
+`npm start` (`src/index.js`) runs **both** the Telegram bot and the Mini App's HTTP server in
+one process — the normal, single-service way to deploy this (e.g. one Railway service). The
+HTTP server comes up first, independently of the bot's Telegram connection, so a slow or
+retrying bot startup (getUpdates can briefly conflict with an old instance during a redeploy —
+see "Long polling" under [Notes before production use](#notes-before-production-use)) never
+blocks a platform healthcheck hitting `$PORT`, and the server keeps serving even if the bot's
+polling loop ultimately fails outright. If you'd rather run them as two separate
+processes/services (independent scaling, isolating a bot restart from the Mini App's uptime),
+`npm run webapp` runs the HTTP server on its own — see
+[`src/webapp-index.js`](src/webapp-index.js).
+
 ```
 npm install
 npm run migrate          # creates data/rasch.sqlite
 npm run seed             # optional: a locked 20-item custom demo test
 #   -> now edit .env (see below)
 npm run doctor           # checks your config without contacting Telegram
-npm run start:local      # the bot (long polling), loading .env
-npm run webapp:local     # the Mini App server (separate process, optional), loading .env
+npm run start:local      # bot + Mini App server together, loading .env
 ```
 
 `start:local`/`webapp:local` load `.env` via `node --env-file=.env` for local development.
@@ -54,9 +64,9 @@ and refuse to boot with an actionable message rather than failing later as an op
 
 | Script | Purpose |
 | --- | --- |
-| `npm start` | Run the bot (long polling), reading env vars already set by the platform — use this on Railway/Render/etc. |
+| `npm start` | Run the bot **and** Mini App server together, reading env vars already set by the platform — use this on Railway/Render/etc. |
 | `npm run start:local` | Same, but loads `.env` first — use this for local development |
-| `npm run webapp` | Run the Mini App's HTTP server (static page + submission API), platform env vars |
+| `npm run webapp` | Run **only** the Mini App's HTTP server, as a separate process — optional, for a split deployment |
 | `npm run webapp:local` | Same, but loads `.env` first |
 | `npm run doctor` | Preflight check of config + database; contacts nothing (loads `.env`) |
 | `npm run migrate` | Create/upgrade the SQLite schema (loads `.env`) |
@@ -66,7 +76,8 @@ and refuse to boot with an actionable message rather than failing later as an op
 | `npm run verify:nc55` | Same proof at the full 55-item shape, with scattered grading + batch publish |
 
 `migrate`, `seed` and `doctor` deliberately work before a bot token exists — only `start` and
-`webapp` require one (the Mini App server needs it to verify submissions — see below).
+`webapp` require one (both verify Mini App submissions with it — see below). Don't run `start`
+and `webapp` at the same time on the same machine: they'd both try to bind the same `PORT`.
 
 ---
 
@@ -373,13 +384,17 @@ The page and its API are served from the same origin, so there's no CORS configu
 
 ### Deploying it
 
-1. `npm run webapp` starts the server, bound to `0.0.0.0`. Listens on `process.env.PORT` if
-   set (Railway and most platforms assign this automatically), else `MINIAPP_PORT`, else 8080.
+1. `npm start` brings up the bot **and** the Mini App server together, bound to `0.0.0.0`.
+   Listens on `process.env.PORT` if set (Railway and most platforms assign this automatically),
+   else `MINIAPP_PORT`, else 8080. This is what makes `/health`, `GET /`, and the rest of the
+   Mini App's routes respond to a platform healthcheck — running the bot alone opens no inbound
+   port at all, which is what produces a generic "Application failed to respond" rather than
+   any clearer error.
 2. Put it behind HTTPS — Telegram refuses non-HTTPS Mini App URLs. For local testing, a tunnel
-   (ngrok, Cloudflare Tunnel) pointed at the local port works; for production, any static+API
-   host or a reverse proxy (Caddy/nginx) in front of the Node process.
-3. Set `MINIAPP_PUBLIC_URL` in `.env` to that HTTPS URL, then restart the bot. `/test CODE` on
-   an NC55 test will now send an **Open Answer Form** button instead of chat instructions.
+   (ngrok, Cloudflare Tunnel) pointed at the local port works; for production, any host that
+   terminates TLS for you, or a reverse proxy (Caddy/nginx) in front of the Node process.
+3. Set `MINIAPP_PUBLIC_URL` in `.env` to that HTTPS URL, then restart. `/test CODE` on an NC55
+   test will now send an **Open Answer Form** button instead of chat instructions.
 4. Register the URL with **@BotFather** (`/newapp` or `/setmenubutton`) if you also want it
    reachable from the bot's menu button, not just the per-test link.
 
@@ -387,8 +402,11 @@ Without `MINIAPP_PUBLIC_URL` configured, NC55 tests still work — `/test` falls
 chat-based format (compact `1A 2B 3C…` for multiple choice, one `36a: <answer>` line per
 written sub-item, all in a single message).
 
-The bot process and the Mini App server are independent — run one, the other, or both,
-sharing the same SQLite file (opened in WAL mode for safe concurrent access from both).
+Running them combined (`npm start`) or split (`npm run webapp` as its own process/service) both
+share the same SQLite file either way (opened in WAL mode for safe concurrent access). Split
+deployment trades simplicity for independence — e.g. a stuck bot-side issue can't take the Mini
+App down, and vice versa — but needs two separate services on most platforms, each with its own
+Start Command (`npm run webapp` for the Mini-App-only one).
 
 ---
 
@@ -466,7 +484,10 @@ notification sent when a teacher scores or publishes also show this same registe
   for a few seconds after the new one starts) is handled already — `src/bot/startResilient.js`
   retries getUpdates' 409 Conflict with capped backoff instead of crashing the process, but
   gives up and fails loudly after 10 attempts, so a genuine two-instances bug still surfaces
-  rather than retrying forever.
+  rather than retrying forever. In the combined process (`npm start`), that failure is logged
+  but deliberately does not crash the whole process — the Mini App server keeps serving even
+  if the bot's Telegram connection ultimately fails outright, rather than one taking the other
+  down with it.
 - **Binary scoring only** (right/wrong, 1 point each) — see "Binary scoring only" above.
 - **Written-item grading is manual by design.** There's no "AI-grade this essay" shortcut here
   on purpose — a Rasch score is a claim about the underlying construct, and that claim is only
