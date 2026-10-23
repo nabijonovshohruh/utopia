@@ -20,9 +20,16 @@ npm run migrate          # creates data/rasch.sqlite
 npm run seed             # optional: a locked 20-item custom demo test
 #   -> now edit .env (see below)
 npm run doctor           # checks your config without contacting Telegram
-npm start                # the bot (long polling)
-npm run webapp           # the Mini App server (separate process, optional)
+npm run start:local      # the bot (long polling), loading .env
+npm run webapp:local     # the Mini App server (separate process, optional), loading .env
 ```
+
+`start:local`/`webapp:local` load `.env` via `node --env-file=.env` for local development.
+`start`/`webapp` (used in production — e.g. Railway) run plain `node ...` and expect the
+platform to inject `BOT_TOKEN` etc. directly as environment variables. Run `start`/`webapp`
+locally without a loader and there's no crash at the Node level — `.env` is simply never read,
+so `process.env.BOT_TOKEN` is empty and the app's own preflight check reports
+`BOT_TOKEN is not set` and exits, same as a genuinely missing variable on a real deployment.
 
 ### Configuring `.env`
 
@@ -41,17 +48,19 @@ two already have working defaults, and the last is optional (see [Mini App setup
 
 Then run `npm run doctor`. It validates the token format, parses `ADMIN_IDS`, confirms the
 database is writable and the anchor-immutability triggers are installed, and exits non-zero
-with a numbered to-do list if anything is missing. `npm start` runs the same checks and
-refuses to boot with an actionable message rather than failing later as an opaque Telegram
+with a numbered to-do list if anything is missing. `start`/`start:local` run the same checks
+and refuse to boot with an actionable message rather than failing later as an opaque Telegram
 404.
 
 | Script | Purpose |
 | --- | --- |
-| `npm start` | Run the bot (long polling) |
-| `npm run webapp` | Run the Mini App's HTTP server (static page + submission API) |
-| `npm run doctor` | Preflight check of config + database; contacts nothing |
-| `npm run migrate` | Create/upgrade the SQLite schema |
-| `npm run seed` | Insert a locked custom demo test, `DEMO-101` |
+| `npm start` | Run the bot (long polling), reading env vars already set by the platform — use this on Railway/Render/etc. |
+| `npm run start:local` | Same, but loads `.env` first — use this for local development |
+| `npm run webapp` | Run the Mini App's HTTP server (static page + submission API), platform env vars |
+| `npm run webapp:local` | Same, but loads `.env` first |
+| `npm run doctor` | Preflight check of config + database; contacts nothing (loads `.env`) |
+| `npm run migrate` | Create/upgrade the SQLite schema (loads `.env`) |
+| `npm run seed` | Insert a locked custom demo test, `DEMO-101` (loads `.env`) |
 | `npm test` | 141 unit, pipeline, config, HTTP and middleware tests |
 | `npm run verify:anchors` | Proof that volume doesn't move the scale (generic engine) |
 | `npm run verify:nc55` | Same proof at the full 55-item shape, with scattered grading + batch publish |

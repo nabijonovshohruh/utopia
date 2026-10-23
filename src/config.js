@@ -65,7 +65,10 @@ export function checkConfig({ requireToken = true, requireAdmins = true } = {}) 
 
   if (requireToken) {
     if (!config.botToken) {
-      errors.push('BOT_TOKEN is not set. Add it to .env — get one from @BotFather in Telegram.');
+      errors.push(
+        'BOT_TOKEN is not set. Set it in your environment (.env locally, or your host\'s ' +
+          'dashboard/variables in production) — get one from @BotFather in Telegram.',
+      );
     } else if (PLACEHOLDER.test(config.botToken)) {
       errors.push(
         'BOT_TOKEN is still the placeholder text. Replace it with the real token @BotFather gave you.',
@@ -83,7 +86,8 @@ export function checkConfig({ requireToken = true, requireAdmins = true } = {}) 
       errors.push(
         'ADMIN_IDS is not set. Without it nobody has teacher rights, so answer keys cannot be ' +
           'uploaded and no test can be locked. Message @userinfobot in Telegram to get your ' +
-          'numeric ID, then put it in .env.',
+          'numeric ID, then set it in your environment (.env locally, or your host\'s ' +
+          'dashboard/variables in production).',
       );
     } else if (admins.invalid.length) {
       errors.push(

@@ -11,7 +11,10 @@ for (const w of warnings) console.warn(`warning: ${w}`);
 if (errors.length) {
   console.error('\nCannot start — configuration problems:\n');
   errors.forEach((e, i) => console.error(`  ${i + 1}. ${e}`));
-  console.error('\nEdit .env, then run "npm run doctor" to re-check.\n');
+  console.error(
+    '\nSet the missing variable(s) — .env locally (then "npm run doctor" to re-check), ' +
+      'or your host\'s dashboard/variables in production — then restart.\n',
+  );
   process.exit(1);
 }
 

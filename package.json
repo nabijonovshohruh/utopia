@@ -8,8 +8,10 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node --env-file=.env src/index.js",
-    "webapp": "node --env-file=.env src/webapp-index.js",
+    "start": "node src/index.js",
+    "start:local": "node --env-file=.env src/index.js",
+    "webapp": "node src/webapp-index.js",
+    "webapp:local": "node --env-file=.env src/webapp-index.js",
     "doctor": "node --env-file=.env src/tools/doctor.js",
     "migrate": "node --env-file=.env src/db/migrate.js",
     "seed": "node --env-file=.env src/tools/seed.js",
