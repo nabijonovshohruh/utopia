@@ -407,7 +407,8 @@ export function adminRoutes(db) {
   async function notifyStudent(ctx, submissionId) {
     const row = db
       .prepare(
-        `SELECT st.telegram_id, t.title, t.code, r.raw_score, r.item_count, r.scaled_score, r.grade
+        `SELECT st.telegram_id, st.full_name, t.title, t.code, r.raw_score, r.item_count,
+                r.scaled_score, r.grade
          FROM results r
          JOIN submissions s ON s.id = r.submission_id
          JOIN students st   ON st.id = s.student_id
@@ -419,7 +420,7 @@ export function adminRoutes(db) {
     await ctx.api
       .sendMessage(
         row.telegram_id,
-        `📊 Your result for <b>${esc(row.title)}</b> is ready.\n` +
+        `📊 <b>${esc(row.full_name)}</b>, your result for <b>${esc(row.title)}</b> is ready.\n` +
           `Raw ${row.raw_score}/${row.item_count} · Scaled <b>${row.scaled_score}</b> · ` +
           `Level <b>${esc(row.grade)}</b>\n\nFull report: /result`,
         { parse_mode: 'HTML' },

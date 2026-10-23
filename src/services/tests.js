@@ -1,7 +1,15 @@
 import crypto from 'node:crypto';
 import { tx } from '../db/index.js';
 import { DEFAULT_GRADE_BANDS, calibrateAnchors } from './rasch.js';
-import { NC55_TEMPLATE, NC55_ITEM_COUNT, labelToSeq, optionsForSeq, validateNc55Structure } from '../domain/nc55.js';
+import {
+  NC55_TEMPLATE,
+  NC55_ITEM_COUNT,
+  NC55_DEFAULT_SCALE,
+  NC55_GRADE_BANDS,
+  labelToSeq,
+  optionsForSeq,
+  validateNc55Structure,
+} from '../domain/nc55.js';
 
 /**
  * Canonical fingerprint of a test's frozen calibration constants.
@@ -103,6 +111,11 @@ export function parseAnswerKey(text) {
     if (value === NC55_TEMPLATE.toUpperCase()) meta.template = NC55_TEMPLATE;
     else errors.push(`unknown TEMPLATE "${templateMatch[1]}" (expected NC55, or omit for a custom test)`);
   }
+  // NC55's default scale is the National Certificate "ball" transform
+  // (0-100-ish), not the generic 500/50/200-800 default — but only as a
+  // starting point: an explicit SCALE:/RANGE: header below still overrides
+  // it, same as for a 'custom' test.
+  if (meta.template === NC55_TEMPLATE) Object.assign(meta, NC55_DEFAULT_SCALE);
 
   const lines = text.split(/\r?\n/);
   for (let ln = 0; ln < lines.length; ln++) {
@@ -183,7 +196,8 @@ export function parseAnswerKey(text) {
   }
 
   items.sort((a, b) => a.position - b.position);
-  return { meta, bands: bands ?? DEFAULT_GRADE_BANDS, items, errors };
+  const defaultBands = meta.template === NC55_TEMPLATE ? NC55_GRADE_BANDS : DEFAULT_GRADE_BANDS;
+  return { meta, bands: bands ?? defaultBands, items, errors };
 }
 
 function toStructureRows(items) {

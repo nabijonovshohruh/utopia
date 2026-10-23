@@ -99,6 +99,12 @@ const texts = (sent) => sent.filter((s) => s.method === 'sendMessage').map((s) =
 const textsTo = (sent, chatId) =>
   sent.filter((s) => s.method === 'sendMessage' && s.payload.chat_id === chatId).map((s) => s.payload.text);
 
+/** Runs the two-step /start -> name registration flow for a student. */
+async function registerStudent(bot, userId, name = `Test Student ${userId}`) {
+  await message(bot, userId, '/start');
+  await message(bot, userId, name);
+}
+
 function allWrittenGrades(value) {
   // '36a=1 36b=0 37a=1 ...' for all 20 written sub-items, same value each.
   const parts = [];
@@ -132,6 +138,7 @@ test('full NC55 flow: chat submission, grading, status, and publish via the butt
   await message(bot, ADMIN_ID, `/upload ${nc55Key('TEST-9001')}`);
   await message(bot, ADMIN_ID, '/lock TEST-9001');
 
+  await registerStudent(bot, STUDENT_ID);
   // Student opens the test without a Mini App configured -> chat fallback.
   await message(bot, STUDENT_ID, '/test TEST-9001');
   const testReply = textsTo(sent, STUDENT_ID).at(-1);
@@ -224,6 +231,7 @@ test('publish is refused via the button while grading is incomplete', async (t) 
 
   await message(bot, ADMIN_ID, `/upload ${nc55Key('TEST-9002')}`);
   await message(bot, ADMIN_ID, '/lock TEST-9002');
+  await registerStudent(bot, STUDENT_ID);
   await message(bot, STUDENT_ID, '/test TEST-9002');
 
   const mcqLine = nc55Items()
@@ -248,6 +256,7 @@ test('gradeWrittenResponses rejection surfaces as a chat error, not a crash', as
 
   await message(bot, ADMIN_ID, `/upload ${nc55Key('TEST-9003')}`);
   await message(bot, ADMIN_ID, '/lock TEST-9003');
+  await registerStudent(bot, STUDENT_ID);
   await message(bot, STUDENT_ID, '/test TEST-9003');
   const mcqLine = nc55Items()
     .filter((i) => i.itemType === 'mcq')

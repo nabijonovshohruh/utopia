@@ -9,14 +9,15 @@ function bar(percent, width = 10) {
   return '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, width - filled));
 }
 
-/** The student-facing score report. */
-export function studentReport({ test, scored, submissionId, bands }) {
+/** The student-facing score report. `studentName` is their registered Ism-Familiya. */
+export function studentReport({ test, scored, submissionId, bands, studentName }) {
   const pct = scored.percentCorrect;
   const next = nextBand(scored.scaledScore, bands);
 
   const lines = [
     `<b>${esc(test.title)}</b>`,
     `<code>${esc(test.code)}</code> · submission #${submissionId}`,
+    ...(studentName ? [`Ism-Familiya: <b>${esc(studentName)}</b>`] : []),
     '',
     `Raw score    <b>${scored.rawScore} / ${scored.itemCount}</b>  (${pct.toFixed(1)}%)`,
     `             <code>${bar(pct)}</code>`,

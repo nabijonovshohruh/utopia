@@ -4,7 +4,7 @@
     {
       "name": "webapp",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "webapp"],
+      "runtimeArgs": ["run", "webapp:local"],
       "port": 8788,
       "autoPort": true
     }

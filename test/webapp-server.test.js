@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { createServer } from '../src/webapp/server.js';
 import { openDb } from '../src/db/index.js';
 import { parseAnswerKey, upsertDraftTest, lockTest } from '../src/services/tests.js';
+import { getOrCreateStudent, registerFullName } from '../src/services/submissions.js';
 import { nc55Items } from '../src/domain/nc55.js';
 
 const BOT_TOKEN = '8012345678:AAHdq1x9kP2mZvQ7rT4nB6wE3sY8uI0oL5c';
@@ -17,6 +18,11 @@ function signedInitData(user, { botToken = BOT_TOKEN, authDate = Math.floor(Date
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const hash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
   return new URLSearchParams({ ...params, hash }).toString();
+}
+
+function registerStudent(db, telegramId, name = 'Test Student') {
+  getOrCreateStudent(db, { id: telegramId });
+  registerFullName(db, telegramId, name);
 }
 
 function nc55Key(code) {
@@ -140,6 +146,7 @@ test('POST /api/submissions: full authenticated round trip grades mcq and leaves
   const { base, db } = await withServer(t, (db) => {
     upsertDraftTest(db, parseAnswerKey(nc55Key('TEST-4444')), 1);
     lockTest(db, 'TEST-4444');
+    registerStudent(db, 42424242, 'Ada Lovelace');
   });
 
   const answers = {};
@@ -183,6 +190,7 @@ test('POST /api/submissions: a second submission from the same student is refuse
   const { base } = await withServer(t, (db) => {
     upsertDraftTest(db, parseAnswerKey(nc55Key('TEST-5555')), 1);
     lockTest(db, 'TEST-5555');
+    registerStudent(db, 777);
   });
   const initData = signedInitData({ id: 777 });
   const payload = { initData, code: 'TEST-5555', answers: { 1: 'A' } };
@@ -209,6 +217,7 @@ test('POST /api/submissions rejects an unknown item label (not silently dropped)
   const { base } = await withServer(t, (db) => {
     upsertDraftTest(db, parseAnswerKey(nc55Key('TEST-6666')), 1);
     lockTest(db, 'TEST-6666');
+    registerStudent(db, 888);
   });
   const initData = signedInitData({ id: 888 });
   const res = await fetch(`${base}/api/submissions`, {
@@ -233,6 +242,53 @@ test('POST /api/submissions rejects an oversized body with 413', async (t) => {
     body: JSON.stringify({ initData, code: 'TEST-7777', answers: { '36a': huge } }),
   });
   assert.equal(res.status, 413);
+});
+
+test('POST /api/submissions refuses an unregistered student with 403, even with a valid signature', async (t) => {
+  const { base, db } = await withServer(t, (db) => {
+    upsertDraftTest(db, parseAnswerKey(nc55Key('TEST-8001')), 1);
+    lockTest(db, 'TEST-8001');
+  });
+  const initData = signedInitData({ id: 5555, first_name: 'Unregistered' });
+  const res = await fetch(`${base}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ initData, code: 'TEST-8001', answers: { 1: 'A' } }),
+  });
+  assert.equal(res.status, 403);
+  assert.match((await res.json()).error, /ro'yxatdan o'ting/);
+  // The student row exists (created as a side effect) but nothing was submitted.
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM submissions').get().c, 0);
+  const student = db.prepare('SELECT registered FROM students WHERE telegram_id = 5555').get();
+  assert.equal(student.registered, 0);
+});
+
+test('GET /api/registration reports unregistered, then registered after /start+name in the bot', async (t) => {
+  const { base, db } = await withServer(t);
+  const initData = signedInitData({ id: 6001, first_name: 'Shohruh' });
+
+  const before = await fetch(`${base}/api/registration?initData=${encodeURIComponent(initData)}`);
+  assert.equal(before.status, 200);
+  const beforeBody = await before.json();
+  assert.equal(beforeBody.ok, true);
+  assert.equal(beforeBody.registered, false);
+
+  registerStudent(db, 6001, 'Shohruh Nabijonov');
+
+  const after = await fetch(`${base}/api/registration?initData=${encodeURIComponent(initData)}`);
+  const afterBody = await after.json();
+  assert.equal(afterBody.registered, true);
+  assert.equal(afterBody.fullName, 'Shohruh Nabijonov');
+});
+
+test('GET /api/registration rejects a missing or forged initData', async (t) => {
+  const { base } = await withServer(t);
+  const noParam = await fetch(`${base}/api/registration`);
+  assert.equal(noParam.status, 401);
+
+  const forged = signedInitData({ id: 1 }, { botToken: 'wrong-token' });
+  const bad = await fetch(`${base}/api/registration?initData=${encodeURIComponent(forged)}`);
+  assert.equal(bad.status, 401);
 });
 
 test('an unknown route returns 404 JSON, not a crash', async (t) => {

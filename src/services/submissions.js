@@ -231,13 +231,58 @@ export function parseLabeledAnswers(text, items) {
   return { answers, error: null };
 }
 
+/**
+ * Looks up or creates a student row.
+ *
+ * `full_name` is only ever set here as a placeholder (Telegram profile
+ * first/last name, or username) for a BRAND NEW row — on every later call
+ * it is left alone. Once a student has typed their own name through the
+ * /start registration flow (see registerFullName), that name is the
+ * authoritative one for certificates; silently overwriting it with
+ * whatever Telegram's profile currently says on each interaction would
+ * undo the entire point of asking them to register it explicitly.
+ */
 export function getOrCreateStudent(db, from) {
-  const fullName = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || 'Student';
+  const fallbackName = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || 'Student';
   db.prepare(
-    `INSERT INTO students (telegram_id, username, full_name) VALUES (?, ?, ?)
-     ON CONFLICT(telegram_id) DO UPDATE SET username = excluded.username, full_name = excluded.full_name`,
-  ).run(from.id, from.username ?? null, fullName);
+    `INSERT INTO students (telegram_id, username, full_name, registered) VALUES (?, ?, ?, 0)
+     ON CONFLICT(telegram_id) DO UPDATE SET username = excluded.username`,
+  ).run(from.id, from.username ?? null, fallbackName);
   return db.prepare('SELECT * FROM students WHERE telegram_id = ?').get(from.id);
+}
+
+/**
+ * Validates a student's typed "Ism-Familiya" (full name) before it's saved.
+ * Deliberately requires at least two words — a bare first name defeats the
+ * point of asking for an official, certificate-ready identity.
+ */
+export function parseFullName(text) {
+  const trimmed = String(text ?? '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) {
+    return { name: null, error: 'Iltimos, ism va familiyangizni kiriting.' };
+  }
+  if (trimmed.startsWith('/')) {
+    return { name: null, error: "Iltimos, buyruq emas, ism va familiyangizni yozing." };
+  }
+  if (trimmed.split(' ').length < 2) {
+    return {
+      name: null,
+      error: "Iltimos, ism va familiyangizni to'liq kiriting (masalan: Shohruh Nabijonov).",
+    };
+  }
+  if (trimmed.length > 80) {
+    return { name: null, error: "Ism-familiya juda uzun. Qisqaroq kiriting." };
+  }
+  return { name: trimmed, error: null };
+}
+
+/** Saves a student's registered full name and marks them as registered. */
+export function registerFullName(db, telegramId, fullName) {
+  db.prepare('UPDATE students SET full_name = ?, registered = 1 WHERE telegram_id = ?').run(
+    fullName,
+    telegramId,
+  );
+  return db.prepare('SELECT * FROM students WHERE telegram_id = ?').get(telegramId);
 }
 
 export function setActiveTest(db, studentId, testId) {

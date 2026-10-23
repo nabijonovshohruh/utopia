@@ -32,7 +32,13 @@ CREATE TABLE IF NOT EXISTS students (
   id               INTEGER PRIMARY KEY,
   telegram_id      INTEGER NOT NULL UNIQUE,
   username         TEXT,
+  -- Starts as a Telegram-profile-derived placeholder (first/last name,
+  -- or username) so there's always something to show before registration.
+  -- Becomes the student's own typed "Ism-Familiya" once `registered = 1`,
+  -- at which point it's authoritative for certificates and is never
+  -- overwritten again by Telegram profile data (see getOrCreateStudent).
   full_name        TEXT,
+  registered       INTEGER NOT NULL DEFAULT 0 CHECK (registered IN (0, 1)),
   active_test_id   INTEGER REFERENCES tests(id) ON DELETE SET NULL,
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );

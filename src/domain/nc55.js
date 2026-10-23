@@ -28,6 +28,35 @@ const MCQ6_LAST = 35;
 const WRITTEN_FIRST_Q = 36;
 const WRITTEN_LAST_Q = 45;
 
+/**
+ * The National Certificate scaled-score ("ball") transform, used as the
+ * default for an nc55 test when its key doesn't give an explicit SCALE:/
+ * RANGE: header. A teacher who knows their own intended calibration can
+ * still override both via the key, same as for a 'custom' test — this is
+ * only the starting point, not a hard-coded ceiling on the architecture's
+ * existing flexibility.
+ */
+export const NC55_DEFAULT_SCALE = {
+  scale_intercept: 50,
+  scale_slope: 10,
+  scale_min: 0,
+  scale_max: 100,
+};
+
+/**
+ * The fixed National Certificate grade thresholds, applied to the ball
+ * score (see NC55_DEFAULT_SCALE). Used as the default grade_bands for an
+ * nc55 test when its key doesn't give an explicit GRADES: header.
+ */
+export const NC55_GRADE_BANDS = [
+  { label: 'Sertifikat berilmaydi', minScaled: 0 },
+  { label: 'C', minScaled: 46 },
+  { label: 'C+', minScaled: 51 },
+  { label: 'B', minScaled: 56 },
+  { label: 'A', minScaled: 61 },
+  { label: 'A+', minScaled: 65 },
+];
+
 export const LETTERS4 = ['A', 'B', 'C', 'D'];
 export const LETTERS6 = ['A', 'B', 'C', 'D', 'E', 'F'];
 

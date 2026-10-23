@@ -7,6 +7,8 @@ import {
   parseLabeledAnswers,
   recordSubmissionByLabel,
   getOrCreateStudent,
+  parseFullName,
+  registerFullName,
   setActiveTest,
   latestSubmission,
 } from '../services/submissions.js';
@@ -59,13 +61,30 @@ export function studentRoutes(db) {
     },
   });
 
+  // The general-purpose button shown on /start — no test code yet, so it
+  // just lands on the Mini App's own code-entry screen. Returns undefined
+  // (not attached) when no public URL is configured, same graceful
+  // degradation as the per-test button above — there's nowhere to point it.
+  const miniAppOpenButton = () =>
+    config.miniAppPublicUrl
+      ? { inline_keyboard: [[{ text: 'Ilovani ochish', web_app: { url: config.miniAppPublicUrl } }]] }
+      : undefined;
+
   bot.command('start', async (ctx) => {
-    getOrCreateStudent(db, ctx.from);
+    const student = getOrCreateStudent(db, ctx.from);
+    const reply_markup = miniAppOpenButton();
+    const opts = reply_markup ? { parse_mode: 'HTML', reply_markup } : { parse_mode: 'HTML' };
+
+    if (!student.registered) {
+      await ctx.reply('Botga xush kelibsiz! 👋\n\nIltimos, ism va familiyangizni kiriting:', opts);
+      return;
+    }
+
     await ctx.reply(
-      `Welcome, ${esc(ctx.from.first_name ?? 'student')}.\n\n` +
+      `Xush kelibsiz, ${esc(student.full_name)}! 👋\n\n` +
         'Send <code>/test CODE</code> with the code your teacher gave you.\n\n' +
         STUDENT_HELP,
-      { parse_mode: 'HTML' },
+      opts,
     );
   });
 
@@ -83,6 +102,12 @@ export function studentRoutes(db) {
     }
 
     const student = getOrCreateStudent(db, ctx.from);
+    if (!student.registered) {
+      return ctx.reply(
+        "Avval ism-familiyangizni ro'yxatdan o'tkazing: /start buyrug'ini yuboring.",
+        { parse_mode: 'HTML' },
+      );
+    }
     const items = getItems(db, test.id);
 
     const prior = latestSubmission(db, student.id, test.id);
@@ -137,6 +162,7 @@ export function studentRoutes(db) {
         test,
         submissionId: bundle.submission_id,
         bands: getBands(db, test.id),
+        studentName: bundle.full_name,
         scored: {
           rawScore: bundle.raw_score,
           itemCount: bundle.item_count,
@@ -176,10 +202,27 @@ export function studentRoutes(db) {
     await ctx.reply(`<b>Your tests</b>\n${body}`, { parse_mode: 'HTML' });
   });
 
-  // Free text while a test is open = an answer sheet.
+  // Free text: name registration takes priority over everything else — an
+  // unregistered student can't meaningfully be "mid-test" yet, since /test
+  // itself is gated on registration too.
   bot.on('message:text', async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
     const student = getOrCreateStudent(db, ctx.from);
+
+    if (!student.registered) {
+      const { name, error } = parseFullName(ctx.message.text);
+      if (error) {
+        await ctx.reply(`⚠️ ${esc(error)}`, { parse_mode: 'HTML' });
+        return;
+      }
+      registerFullName(db, ctx.from.id, name);
+      await ctx.reply(
+        `Rahmat, ${esc(name)}! ✅\n\nEndi <code>/test CODE</code> orqali testni boshlashingiz mumkin.`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
     if (!student.active_test_id) {
       return ctx.reply('Send /test CODE to begin, or /help for the command list.');
     }
@@ -239,7 +282,7 @@ export function studentRoutes(db) {
     try {
       const { scored } = scoreSubmission(db, submissionId);
       await ctx.reply(
-        studentReport({ test, scored, submissionId, bands: getBands(db, test.id) }),
+        studentReport({ test, scored, submissionId, bands: getBands(db, test.id), studentName: student.full_name }),
         { parse_mode: 'HTML' },
       );
     } catch (err) {

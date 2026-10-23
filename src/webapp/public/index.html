@@ -150,8 +150,18 @@
 </head>
 <body>
 <div id="app">
+  <!-- Screen 0: registration required (checked upfront via /api/registration) -->
+  <section id="screen-blocked" class="center-screen" hidden>
+    <div class="big-icon">🔒</div>
+    <h1>Ro'yxatdan o'tish kerak</h1>
+    <p class="muted">
+      Avval botga o'ting, <b>/start</b> buyrug'ini yuboring va ism-familiyangizni kiriting.
+      Ro'yxatdan o'tgach, bu sahifani qayta oching.
+    </p>
+  </section>
+
   <!-- Screen 1: code entry -->
-  <section id="screen-entry" class="center-screen">
+  <section id="screen-entry" class="center-screen" hidden>
     <h1>National Certificate</h1>
     <p class="hint">Enter the test code your teacher gave you.</p>
     <input id="code-input" type="text" inputmode="text" autocapitalize="characters" placeholder="e.g. TEST-5501" />
@@ -193,6 +203,7 @@
   }
 
   var screens = {
+    blocked: document.getElementById('screen-blocked'),
     entry: document.getElementById('screen-entry'),
     form: document.getElementById('screen-form'),
     done: document.getElementById('screen-done'),
@@ -423,7 +434,31 @@
     if (tg) { try { tg.close(); } catch (e) {} }
   }
 
-  showScreen('entry');
+  /* ---------------- Startup: check registration before showing anything ----------------
+     Checked upfront so a student finds out BEFORE filling in all 55 items,
+     not after tapping submit. Skipped (falls straight to the code-entry
+     screen) when there's no initData to check — e.g. this file opened in a
+     plain browser outside Telegram, for local preview/testing. */
+
+  var initData = tg ? tg.initData : '';
+  if (initData) {
+    apiGet('/api/registration?initData=' + encodeURIComponent(initData))
+      .then(function (res) {
+        if (res.body && res.body.ok && res.body.registered === false) {
+          showScreen('blocked');
+        } else {
+          showScreen('entry');
+        }
+      })
+      .catch(function () {
+        // Registration check itself failed (network blip, etc) — don't trap
+        // the student behind a dead end; let them try the normal flow,
+        // which still enforces registration server-side at submit time.
+        showScreen('entry');
+      });
+  } else {
+    showScreen('entry');
+  }
 })();
 </script>
 </body>

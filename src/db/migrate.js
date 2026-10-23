@@ -19,6 +19,11 @@ try {
         '(55-item National Certificate template support). The database had no ' +
         'real submissions or results, so old demo/draft tables were dropped and recreated.',
     );
+  } else if (result.action === 'altered') {
+    console.log(
+      `\nUpgraded to version ${result.version} (student name registration) — added ` +
+        'students.registered via ALTER TABLE. No data was touched or lost.',
+    );
   } else if (result.action === 'stamped') {
     console.log(`\nSchema already matched version ${result.version}; recorded it in schema_meta.`);
   } else {

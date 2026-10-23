@@ -84,6 +84,12 @@ function message(bot, userId, text) {
   });
 }
 
+/** Runs the two-step /start -> name registration flow for a student. */
+async function registerStudent(bot, userId, name = `Test Student ${userId}`) {
+  await message(bot, userId, '/start');
+  await message(bot, userId, name);
+}
+
 const texts = (sent) => sent.filter((s) => s.method === 'sendMessage').map((s) => s.payload.text);
 
 /** Messages delivered to one specific chat — /score replies to the admin and
@@ -97,14 +103,51 @@ test('a student update falls through adminRoutes and gets a reply', async () => 
   await message(bot, STUDENT_ID, '/start');
   const out = texts(sent);
   assert.equal(out.length, 1, 'student got no reply — adminRoutes swallowed the update');
-  assert.match(out[0], /Welcome/);
+  assert.match(out[0], /ism va familiyangizni kiriting/);
+  db.close();
+});
+
+test('an unregistered student cannot open a test, and is pointed at /start', async () => {
+  const { bot, sent, db } = harness();
+  await bot.init();
+  await message(bot, STUDENT_ID, '/test R1');
+  assert.match(texts(sent).at(-1), /\/start/);
+  assert.equal(db.prepare('SELECT active_test_id FROM students WHERE telegram_id=?').get(STUDENT_ID)?.active_test_id ?? null, null);
+  db.close();
+});
+
+test('registering with a single-word name is rejected; a full name is accepted and unblocks /test', async () => {
+  const { bot, sent, db } = harness();
+  await bot.init();
+  await message(bot, STUDENT_ID, '/start');
+  await message(bot, STUDENT_ID, 'Ada');
+  assert.match(texts(sent).at(-1), /to'liq kiriting/);
+  assert.equal(db.prepare('SELECT registered FROM students WHERE telegram_id=?').get(STUDENT_ID).registered, 0);
+
+  await message(bot, STUDENT_ID, 'Ada Lovelace');
+  assert.match(texts(sent).at(-1), /Rahmat, Ada Lovelace/);
+  const student = db.prepare('SELECT * FROM students WHERE telegram_id=?').get(STUDENT_ID);
+  assert.equal(student.registered, 1);
+  assert.equal(student.full_name, 'Ada Lovelace');
+
+  await message(bot, STUDENT_ID, '/test R1');
+  assert.match(texts(sent).at(-1), /Routing Test/);
+  db.close();
+});
+
+test('a returning registered student sees their name on /start', async () => {
+  const { bot, sent, db } = harness();
+  await bot.init();
+  await registerStudent(bot, STUDENT_ID, 'Ada Lovelace');
+  await message(bot, STUDENT_ID, '/start');
+  assert.match(texts(sent).at(-1), /Xush kelibsiz, Ada Lovelace/);
   db.close();
 });
 
 test('full student flow: open a test, submit, receive a Rasch report', async () => {
   const { bot, sent, db } = harness();
   await bot.init();
-  await message(bot, STUDENT_ID, '/start');
+  await registerStudent(bot, STUDENT_ID, 'Ada Lovelace');
   await message(bot, STUDENT_ID, '/test R1');
   assert.match(texts(sent).at(-1), /Routing Test/);
 
@@ -127,6 +170,7 @@ test('full student flow: open a test, submit, receive a Rasch report', async () 
 test('a malformed answer sheet is rejected without creating a submission', async () => {
   const { bot, sent, db } = harness();
   await bot.init();
+  await registerStudent(bot, STUDENT_ID);
   await message(bot, STUDENT_ID, '/test R1');
   await message(bot, STUDENT_ID, 'AB');
   assert.match(texts(sent).at(-1), /Expected 3 answers but read 2/);
@@ -137,6 +181,7 @@ test('a malformed answer sheet is rejected without creating a submission', async
 test('resubmission is refused', async () => {
   const { bot, sent, db } = harness();
   await bot.init();
+  await registerStudent(bot, STUDENT_ID);
   await message(bot, STUDENT_ID, '/test R1');
   await message(bot, STUDENT_ID, 'ABC');
   await message(bot, STUDENT_ID, '/test R1');
@@ -204,6 +249,7 @@ test('manual grading path: autograde off, then /pending and /score', async () =>
   await message(bot, ADMIN_ID, '/autograde R1 off');
   assert.match(texts(sent).at(-1), /now <b>off<\/b>/);
 
+  await registerStudent(bot, STUDENT_ID);
   await message(bot, STUDENT_ID, '/test R1');
   await message(bot, STUDENT_ID, 'ABX');
   assert.match(texts(sent).at(-1), /teacher will release the score/);
@@ -220,8 +266,11 @@ test('manual grading path: autograde off, then /pending and /score', async () =>
   assert.match(textsTo(sent, ADMIN_ID).at(-1), /Person fit/);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM results').get().c, 1);
 
-  // ...and the student is notified in their own chat.
-  assert.match(textsTo(sent, STUDENT_ID).at(-1), /Your result for <b>Routing Test<\/b> is ready/);
+  // ...and the student is notified in their own chat, by their registered name.
+  assert.match(
+    textsTo(sent, STUDENT_ID).at(-1),
+    /<b>Test Student 2<\/b>, your result for <b>Routing Test<\/b> is ready/,
+  );
 
   await message(bot, ADMIN_ID, `/verify ${subId}`);
   assert.match(textsTo(sent, ADMIN_ID).at(-1), /marked verified/);

@@ -76,6 +76,28 @@ const CODE_SHAPE = /^[A-Za-z0-9-]{1,40}$/;
  * bot.
  */
 export function createServer(db, { botToken }) {
+  /**
+   * Lets the Mini App check "is this user registered?" BEFORE rendering the
+   * 55-item form, instead of only finding out at submit time after they've
+   * filled the whole thing in. initData travels as a query param here since
+   * this is a simple GET — it's no more sensitive in a URL than it is in a
+   * POST body, and it's never logged or stored.
+   */
+  function handleGetRegistration(res, url) {
+    const initData = url.searchParams.get('initData');
+    const verified = verifyInitData(initData, botToken);
+    if (!verified.ok) {
+      return json(res, 401, { ok: false, error: `authentication failed: ${verified.error}` });
+    }
+    const student = getOrCreateStudent(db, {
+      id: verified.user.id,
+      username: verified.user.username ?? null,
+      first_name: verified.user.first_name ?? null,
+      last_name: verified.user.last_name ?? null,
+    });
+    return json(res, 200, { ok: true, registered: Boolean(student.registered), fullName: student.full_name });
+  }
+
   function handleGetTest(res, rawCode) {
     const code = decodeURIComponent(rawCode);
     if (!CODE_SHAPE.test(code)) return json(res, 400, { ok: false, error: 'invalid code format' });
@@ -116,6 +138,20 @@ export function createServer(db, { botToken }) {
       first_name: verified.user.first_name ?? null,
       last_name: verified.user.last_name ?? null,
     });
+
+    // Certificates need the student's own registered Ism-Familiya, not
+    // whatever Telegram's profile happens to say — same gate the chat bot
+    // applies to /test. The frontend checks this upfront via
+    // /api/registration so a student normally never reaches this 403 after
+    // actually filling in the form; it's a backstop, not the primary UX.
+    if (!student.registered) {
+      return json(res, 403, {
+        ok: false,
+        error:
+          "Avval botda ro'yxatdan o'ting: botga o'ting, /start buyrug'ini yuboring va " +
+          'ism-familiyangizni kiriting.',
+      });
+    }
 
     const prior = latestSubmission(db, student.id, test.id);
     if (prior) {
@@ -171,6 +207,10 @@ export function createServer(db, { botToken }) {
 
         if (req.method === 'GET' && url.pathname === '/api/structure') {
           return json(res, 200, { itemCount: NC55_ITEM_COUNT, blocks: nc55Blocks() });
+        }
+
+        if (req.method === 'GET' && url.pathname === '/api/registration') {
+          return handleGetRegistration(res, url);
         }
 
         const testMatch = url.pathname.match(/^\/api\/test\/([^/]+)$/);

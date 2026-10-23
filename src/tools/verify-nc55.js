@@ -15,8 +15,8 @@
 import assert from 'node:assert/strict';
 import { openDb } from '../db/index.js';
 import { parseAnswerKey, upsertDraftTest, lockTest, getItems } from '../services/tests.js';
-import { recordSubmissionByLabel, getOrCreateStudent } from '../services/submissions.js';
-import { gradeWrittenResponses, publishResults, testStatusCounts, scoreTableFor } from '../services/scoring.js';
+import { recordSubmissionByLabel, getOrCreateStudent, registerFullName } from '../services/submissions.js';
+import { gradeWrittenResponses, publishResults, testStatusCounts, scoreTableFor, listResults } from '../services/scoring.js';
 import { nc55Items, NC55_ITEM_COUNT } from '../domain/nc55.js';
 import { probability } from '../services/rasch.js';
 
@@ -28,11 +28,13 @@ const rand = () => {
 
 // Realistic-ish anchor spread across all 55 items.
 const anchors = nc55Items().map((item, i) => Number((-2.6 + (5.2 * i) / (NC55_ITEM_COUNT - 1)).toFixed(2)));
+// No GRADES:/SCALE: header — this is the point: an NC55 key with nothing
+// specified gets the National Certificate ball scale and A+/A/B/C+/C/
+// "Sertifikat berilmaydi" bands by default (src/domain/nc55.js).
 const key = [
   'TEMPLATE: NC55',
   'CODE: VERIFY-NC55',
   'TITLE: NC55 Anchor Stability Proof',
-  'GRADES: A+>=700, A>=640, B+>=580, B>=520, C>=460, NC>=0',
   'ITEMS:',
   ...nc55Items().map((item, i) =>
     item.itemType === 'mcq' ? `${item.label} ${item.options[0]} ${anchors[i]}` : `${item.label} ${anchors[i]}`,
@@ -45,13 +47,22 @@ assert.equal(parsed.errors.length, 0, `key parse errors: ${parsed.errors.join(';
 upsertDraftTest(db, parsed, 1);
 const test = lockTest(db, 'VERIFY-NC55');
 const items = getItems(db, test.id);
-console.log(`Locked ${test.code} · ${items.length} items (35 mcq, 20 written) · anchor ${test.anchor_checksum}\n`);
+console.log(
+  `Locked ${test.code} · ${items.length} items (35 mcq, 20 written) · anchor ${test.anchor_checksum}\n` +
+    `Scale: ${test.scale_intercept} + ${test.scale_slope}·θ, clamped ${test.scale_min}-${test.scale_max} ("ball")\n`,
+);
 
-/** One simulated student: answers every mcq by true-ability probability, and
- * "writes" every sub-item (free text is cosmetic — what matters for scoring
- * is how the teacher later grades it). */
+const FIRST_NAMES = ['Shohruh', 'Dilnoza', 'Jasur', 'Madina', 'Sardor', 'Ziyoda', 'Aziz', 'Gulnora'];
+const LAST_NAMES = ['Nabijonov', 'Karimova', 'Yusupov', 'Tashkentova', 'Rashidov', 'Islomova'];
+
+/** One simulated student: registers a name (requirement 1), answers every
+ * mcq by true-ability probability, and "writes" every sub-item (free text
+ * is cosmetic — what matters for scoring is how the teacher later grades
+ * it). */
 function simulateSubmission(telegramId, trueTheta) {
   const student = getOrCreateStudent(db, { id: telegramId, first_name: `S${telegramId}` });
+  const name = `${FIRST_NAMES[telegramId % FIRST_NAMES.length]} ${LAST_NAMES[telegramId % LAST_NAMES.length]}`;
+  registerFullName(db, telegramId, name);
   const answersByLabel = {};
   const trueWrittenCorrect = {};
   items.forEach((item, i) => {
@@ -159,13 +170,21 @@ for (const row of rows) {
 console.log('✅ every published result matches the pre-publish conversion chart.');
 
 console.log('\nConversion chart (raw 0..55, every 5th row):');
-console.log('  raw   theta  scaled  lvl');
+console.log('  raw   theta  ball  daraja');
 for (const r of table.filter((_, i) => i % 5 === 0)) {
   console.log(
     `  ${String(r.rawScore).padStart(3)}  ${(r.theta >= 0 ? '+' : '') + r.theta.toFixed(2)}` +
-      `  ${String(r.scaledScore).padStart(5)}  ${r.grade}`,
+      `  ${String(r.scaledScore).padStart(4)}  ${r.grade}`,
   );
 }
 
-console.log('\n🎉 NC55 pipeline verified: mixed mcq/written items, scattered grading, and batch publish all hold anchoring.');
+// Certificate report sample — name + ball + grade, as a teacher's /results
+// listing (and each student's own /result) would show it.
+console.log('\nSample certificate results (requirement 3 — name + ball + grade):');
+const sample = listResults(db, 'VERIFY-NC55', 8);
+for (const r of sample) {
+  console.log(`  ${r.full_name.padEnd(20)} raw ${String(r.raw_score).padStart(2)}/55  ball ${String(r.scaled_score).padStart(3)}  ${r.grade}`);
+}
+
+console.log('\n🎉 NC55 pipeline verified: mixed mcq/written items, scattered grading, registered names, and batch publish all hold anchoring.');
 db.close();

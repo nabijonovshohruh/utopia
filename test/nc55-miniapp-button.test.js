@@ -79,6 +79,8 @@ test('when MINIAPP_PUBLIC_URL is configured, /test sends a web_app button instea
 
   await message(ADMIN_ID, `/upload ${key}`);
   await message(ADMIN_ID, '/lock TEST-9004');
+  await message(STUDENT_ID, '/start');
+  await message(STUDENT_ID, 'Test Student');
   await message(STUDENT_ID, '/test TEST-9004');
 
   const last = sent.filter((s) => s.method === 'sendMessage' && s.payload.chat_id === STUDENT_ID).at(-1);
@@ -135,6 +137,8 @@ test('a custom (non-NC55) test never gets the Mini App button, even with the URL
 
   await message(ADMIN_ID, '/upload CODE: OLD9\nTITLE: Legacy\nITEMS:\n1 A -1\n2 B 0');
   await message(ADMIN_ID, '/lock OLD9');
+  await message(STUDENT_ID, '/start');
+  await message(STUDENT_ID, 'Test Student');
   await message(STUDENT_ID, '/test OLD9');
 
   const last = sent.filter((s) => s.method === 'sendMessage' && s.payload.chat_id === STUDENT_ID).at(-1);

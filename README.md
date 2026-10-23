@@ -61,7 +61,7 @@ and refuse to boot with an actionable message rather than failing later as an op
 | `npm run doctor` | Preflight check of config + database; contacts nothing (loads `.env`) |
 | `npm run migrate` | Create/upgrade the SQLite schema (loads `.env`) |
 | `npm run seed` | Insert a locked custom demo test, `DEMO-101` (loads `.env`) |
-| `npm test` | 141 unit, pipeline, config, HTTP and middleware tests |
+| `npm test` | 167 unit, pipeline, config, HTTP and middleware tests |
 | `npm run verify:anchors` | Proof that volume doesn't move the scale (generic engine) |
 | `npm run verify:nc55` | Same proof at the full 55-item shape, with scattered grading + batch publish |
 
@@ -205,6 +205,25 @@ Items 36–55 are free text — there's no key to match against. `responses.corr
 (`scoreSubmission`) refuses to run while any response on a submission is still `NULL`, so a
 Rasch score can never silently treat "nobody has read this answer yet" as "incorrect."
 
+### Certificate grade scale ("ball")
+
+An NC55 key with no `SCALE:`/`RANGE:`/`GRADES:` header defaults to the National Certificate
+ball scale (`NC55_DEFAULT_SCALE`/`NC55_GRADE_BANDS` in `src/domain/nc55.js`) rather than the
+generic one:
+
+| Ball | Daraja |
+| --- | --- |
+| < 46 | Sertifikat berilmaydi |
+| 46–50 | C |
+| 51–55 | C+ |
+| 56–60 | B |
+| 61–64 | A |
+| 65+ | A+ |
+
+This is a *default*, not a hard-coded ceiling — an explicit `SCALE:`/`RANGE:`/`GRADES:` header
+in the key still overrides it, the same as for a 'custom' test. `custom`-template tests are
+unaffected either way; this default only applies to `TEMPLATE: NC55` keys.
+
 ---
 
 ## Schema
@@ -213,7 +232,7 @@ Rasch score can never silently treat "nobody has read this answer yet" as "incor
 
 | Table | Holds |
 | --- | --- |
-| `students` | Telegram identity, currently open test |
+| `students` | Telegram identity, registered Ism-Familiya (`registered` flag), currently open test |
 | `tests` | Code, title, status, `template` (`custom`/`nc55`), **frozen scale constants**, `anchor_checksum`, `scale_version` |
 | `items` | Position/label, `item_type` (`mcq`/`written`), option count, answer key (mcq only), parent question + sub-label (written only), **`b_logit`**, `anchored` flag |
 | `grade_bands` | Per-test certificate levels (`label`, `min_scaled`) |
@@ -233,9 +252,13 @@ database that predates the 55-item columns, it throws immediately at boot with
 `Run: npm run migrate` rather than starting into a half-broken state that only fails later on
 the first query that touches a missing column.
 
-`npm run migrate` performs the actual upgrade, and only destructively rebuilds tables when the
-database has **zero real submissions or results** (a fresh or demo-only database) — otherwise
-it refuses outright and tells you to handle it by hand. There's never a silent data-loss path.
+`npm run migrate` performs the actual upgrade. Two paths, chosen by what's already there:
+- v2 → v3 (`students.registered`, for name registration) is one additive column, applied via
+  `ALTER TABLE` **regardless of how much real data exists** — nothing is dropped or rewritten.
+- v1 → v2 changed `CHECK`/`NOT NULL` constraints on existing columns, which `ALTER TABLE`
+  can't do, so that jump still needs a destructive rebuild — and only runs when the database
+  has **zero real submissions or results** (fresh or demo-only); otherwise it refuses outright
+  and tells you to handle it by hand. There's never a silent data-loss path.
 
 ---
 
@@ -368,6 +391,26 @@ sharing the same SQLite file (opened in WAL mode for safe concurrent access from
 
 ## Student workflow
 
+### 0. Register a name — required, once
+
+`/start` always shows an **"Ilovani ochish"** button (if a Mini App is configured — see
+[below](#mini-app-setup)) — for students and teachers alike, since both go through the same
+handler. A student who hasn't registered yet is asked:
+
+```
+Iltimos, ism va familiyangizni kiriting:
+```
+
+and their reply (validated: at least two words, no bare commands) is saved as their official
+Ism-Familiya — *not* whatever Telegram's profile happens to say, and not touched again by
+profile changes afterward (see `getOrCreateStudent` in `src/services/submissions.js`). Both
+`/test` (chat) and the Mini App's submission endpoint refuse to accept an answer sheet from an
+unregistered student; the Mini App additionally checks registration *before* rendering the
+55-item form (`GET /api/registration`), so nobody fills the whole thing in only to be turned
+away at submit time.
+
+### 1. Take a test
+
 **Custom tests**, or NC55 without a Mini App configured:
 
 ```
@@ -382,11 +425,12 @@ form shows a progress counter, radio groups sized to each item (4 or 6 options),
 textareas for the ten written questions; submitting posts straight to the bot's database.
 Results aren't available until the teacher publishes (written items need grading first).
 
-The report, once scored:
+The report, once scored, always includes the student's registered name:
 
 ```
 Mathematics Midterm 2026
 MATH-2026-A · submission #412
+Ism-Familiya: Shohruh Nabijonov
 
 Raw score    14 / 20  (70.0%)
              ███████░░░
@@ -401,6 +445,9 @@ Level        B
 Scored against fixed item anchors (a3aa925a, scale v1).
 This score does not change as more students submit.
 ```
+
+Admin listings (`/results CODE`, `/pending`, `/ungraded CODE`) and the "result is ready"
+notification sent when a teacher scores or publishes also show this same registered name.
 
 ---
 
