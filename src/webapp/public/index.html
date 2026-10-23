@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>National Certificate — Answer Sheet</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  /* Telegram injects --tg-theme-* custom properties onto <html> once its
+     WebApp script runs; the fallback values after each var() are what a
+     plain browser (e.g. during local preview/testing) sees instead. */
+  :root {
+    --bg: var(--tg-theme-bg-color, #f4f5f7);
+    --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #16181c);
+    --hint: var(--tg-theme-hint-color, #6b7280);
+    --accent: var(--tg-theme-button-color, #2f6fed);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --border: rgba(0, 0, 0, 0.08);
+    --danger: #d64545;
+    --ok: #1f9254;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: var(--tg-theme-bg-color, #15161a);
+      --card-bg: var(--tg-theme-secondary-bg-color, #202126);
+      --text: var(--tg-theme-text-color, #e7e8ea);
+      --hint: var(--tg-theme-hint-color, #9a9ca3);
+      --border: rgba(255, 255, 255, 0.1);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #app { max-width: 640px; margin: 0 auto; padding: 16px 16px 96px; }
+  h1 { font-size: 1.1rem; margin: 4px 0 2px; }
+  h2 { font-size: 0.95rem; margin: 0 0 10px; color: var(--hint); font-weight: 600; }
+  p.hint { color: var(--hint); font-size: 0.88rem; margin: 4px 0 18px; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    font-size: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    margin: 10px 0;
+  }
+  input[type="text"]:focus { outline: 2px solid var(--accent); }
+
+  button {
+    appearance: none;
+    border: none;
+    border-radius: 12px;
+    padding: 13px 18px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-text); width: 100%; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-link { background: none; color: var(--accent); padding: 8px 0; font-size: 14px; }
+
+  .error-text { color: var(--danger); font-size: 0.88rem; margin-top: 6px; min-height: 1.2em; }
+  .ok-text { color: var(--ok); }
+
+  .q-label { font-weight: 600; margin-bottom: 8px; }
+  .q-num { color: var(--hint); font-weight: 500; }
+
+  /* grid-template-columns is set inline per block (4 or 6), so a row of
+     options is always even — a flex-wrap layout orphans the last option
+     onto its own row whenever the container is narrower than N*itemWidth,
+     which is routinely true on real phone widths for a 4-option row. */
+  .options { display: grid; gap: 8px; }
+  .opt {
+    text-align: center;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 0;
+    font-weight: 600;
+    user-select: none;
+  }
+  .opt input { display: none; }
+  .opt.selected { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+
+  .sub-block { margin-top: 10px; }
+  .sub-block + .sub-block { margin-top: 14px; }
+  .sub-label { font-size: 0.85rem; color: var(--hint); margin-bottom: 4px; }
+  textarea {
+    width: 100%;
+    min-height: 64px;
+    font-size: 15px;
+    font-family: inherit;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    resize: vertical;
+  }
+  textarea:focus { outline: 2px solid var(--accent); }
+  .char-count { text-align: right; font-size: 0.75rem; color: var(--hint); margin-top: 2px; }
+
+  .progress-wrap {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    padding: 10px 0 8px;
+    margin-bottom: 4px;
+  }
+  .progress-bar {
+    height: 8px;
+    border-radius: 99px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .progress-fill { height: 100%; background: var(--accent); transition: width 0.2s; }
+  .progress-text { font-size: 0.8rem; color: var(--hint); margin-top: 4px; }
+
+  .submit-bar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--bg) 70%, transparent);
+  }
+  .submit-bar-inner { max-width: 640px; margin: 0 auto; }
+
+  .center-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; text-align: center; }
+  .big-icon { font-size: 40px; margin-bottom: 8px; }
+  .muted { color: var(--hint); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Screen 1: code entry -->
+  <section id="screen-entry" class="center-screen">
+    <h1>National Certificate</h1>
+    <p class="hint">Enter the test code your teacher gave you.</p>
+    <input id="code-input" type="text" inputmode="text" autocapitalize="characters" placeholder="e.g. TEST-5501" />
+    <button id="load-btn" class="btn-primary">Open test</button>
+    <div id="entry-error" class="error-text"></div>
+  </section>
+
+  <!-- Screen 2: the 55-item form -->
+  <section id="screen-form" hidden>
+    <div class="progress-wrap">
+      <h1 id="form-title"></h1>
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
+      <div id="progress-text" class="progress-text"></div>
+    </div>
+    <div id="questions"></div>
+    <div class="submit-bar">
+      <div class="submit-bar-inner">
+        <div id="submit-error" class="error-text"></div>
+        <button id="submit-btn" class="btn-primary">Submit answers</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 3: outcome -->
+  <section id="screen-done" class="center-screen" hidden>
+    <div id="done-icon" class="big-icon"></div>
+    <h1 id="done-title"></h1>
+    <p id="done-detail" class="muted"></p>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+  if (tg) {
+    try { tg.ready(); tg.expand(); } catch (e) { /* non-fatal in odd WebView states */ }
+  }
+
+  var screens = {
+    entry: document.getElementById('screen-entry'),
+    form: document.getElementById('screen-form'),
+    done: document.getElementById('screen-done'),
+  };
+  function showScreen(name) {
+    for (var k in screens) screens[k].hidden = (k !== name);
+  }
+
+  function setText(el, text) { el.textContent = text; }
+
+  function apiGet(url) {
+    return fetch(url).then(function (r) {
+      return r.json().then(function (body) { return { status: r.status, body: body }; });
+    });
+  }
+  function apiPost(url, payload) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then(function (r) {
+      return r.json().then(function (body) { return { status: r.status, body: body }; });
+    });
+  }
+
+  /* ---------------- Screen 1: code entry ---------------- */
+
+  var codeInput = document.getElementById('code-input');
+  var loadBtn = document.getElementById('load-btn');
+  var entryError = document.getElementById('entry-error');
+
+  var params = new URLSearchParams(window.location.search);
+  var prefillCode = params.get('code');
+  if (prefillCode) codeInput.value = prefillCode.toUpperCase();
+
+  function loadTest() {
+    var code = codeInput.value.trim().toUpperCase();
+    setText(entryError, '');
+    if (!code) { setText(entryError, 'Enter a test code first.'); return; }
+
+    loadBtn.disabled = true;
+    loadBtn.textContent = 'Loading…';
+
+    apiGet('/api/test/' + encodeURIComponent(code))
+      .then(function (res) {
+        if (!res.body || res.body.ok !== true) {
+          throw new Error((res.body && res.body.error) || 'Could not load that test.');
+        }
+        return apiGet('/api/structure').then(function (structRes) {
+          return { test: res.body, structure: structRes.body };
+        });
+      })
+      .then(function (data) {
+        renderForm(data.test, data.structure.blocks);
+        showScreen('form');
+      })
+      .catch(function (err) {
+        setText(entryError, err.message);
+      })
+      .finally(function () {
+        loadBtn.disabled = false;
+        loadBtn.textContent = 'Open test';
+      });
+  }
+  loadBtn.addEventListener('click', loadTest);
+  codeInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') loadTest(); });
+
+  /* ---------------- Screen 2: the form ---------------- */
+
+  var state = { code: null, items: [], answers: {} };
+
+  var questionsEl = document.getElementById('questions');
+  var progressFill = document.getElementById('progress-fill');
+  var progressText = document.getElementById('progress-text');
+  var submitBtn = document.getElementById('submit-btn');
+  var submitError = document.getElementById('submit-error');
+
+  function renderForm(test, blocks) {
+    state.code = test.code;
+    state.items = [];
+    state.answers = {};
+    setText(document.getElementById('form-title'), test.title);
+
+    questionsEl.innerHTML = '';
+    blocks.forEach(function (block, idx) {
+      questionsEl.appendChild(renderBlock(block, idx + 1));
+    });
+    updateProgress();
+  }
+
+  function renderBlock(block, displayIndex) {
+    var card = document.createElement('div');
+    card.className = 'card';
+
+    if (block.type === 'mcq') {
+      state.items.push(block.label);
+      var head = document.createElement('div');
+      head.className = 'q-label';
+      head.innerHTML = '<span class="q-num">Q' + displayIndex + '</span> &middot; Item ' + block.label;
+      card.appendChild(head);
+
+      var opts = document.createElement('div');
+      opts.className = 'options';
+      opts.style.gridTemplateColumns = 'repeat(' + block.options.length + ', 1fr)';
+      block.options.forEach(function (letter) {
+        opts.appendChild(renderOption(block.label, letter));
+      });
+      card.appendChild(opts);
+      return card;
+    }
+
+    // written: two sub-items (a/b) sharing one parent-question card.
+    var head2 = document.createElement('div');
+    head2.className = 'q-label';
+    head2.innerHTML = '<span class="q-num">Q' + displayIndex + '</span> &middot; Question ' + block.parentQuestion + ' (written)';
+    card.appendChild(head2);
+
+    block.subs.forEach(function (sub) {
+      state.items.push(sub.label);
+      var wrap = document.createElement('div');
+      wrap.className = 'sub-block';
+
+      var subLabel = document.createElement('div');
+      subLabel.className = 'sub-label';
+      subLabel.textContent = 'Part ' + sub.label.slice(-1);
+      wrap.appendChild(subLabel);
+
+      var textarea = document.createElement('textarea');
+      textarea.maxLength = 4000;
+      textarea.placeholder = 'Type your answer…';
+      textarea.addEventListener('input', function () {
+        state.answers[sub.label] = textarea.value;
+        count.textContent = textarea.value.length + ' / 4000';
+        updateProgress();
+      });
+      wrap.appendChild(textarea);
+
+      var count = document.createElement('div');
+      count.className = 'char-count';
+      count.textContent = '0 / 4000';
+      wrap.appendChild(count);
+
+      card.appendChild(wrap);
+    });
+    return card;
+  }
+
+  function renderOption(label, letter) {
+    var opt = document.createElement('label');
+    opt.className = 'opt';
+    opt.textContent = letter;
+
+    var input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'item-' + label;
+    input.value = letter;
+    input.addEventListener('change', function () {
+      state.answers[label] = letter;
+      var group = opt.parentElement;
+      for (var i = 0; i < group.children.length; i++) group.children[i].classList.remove('selected');
+      opt.classList.add('selected');
+      updateProgress();
+    });
+    opt.appendChild(input);
+    return opt;
+  }
+
+  function updateProgress() {
+    var total = state.items.length;
+    var answered = 0;
+    state.items.forEach(function (label) {
+      var v = state.answers[label];
+      if (v && String(v).trim()) answered++;
+    });
+    var pct = total ? Math.round((answered / total) * 100) : 0;
+    progressFill.style.width = pct + '%';
+    progressText.textContent = answered + ' / ' + total + ' answered';
+  }
+
+  function submit() {
+    setText(submitError, '');
+    var total = state.items.length;
+    var answered = 0;
+    state.items.forEach(function (label) { if (state.answers[label]) answered++; });
+    var missing = total - answered;
+
+    if (missing > 0) {
+      var proceed = window.confirm(
+        missing + ' item(s) are still unanswered. Submit anyway? You cannot edit answers after submitting.'
+      );
+      if (!proceed) return;
+    } else {
+      var confirmAll = window.confirm('Submit your answers now? You cannot edit them afterwards.');
+      if (!confirmAll) return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting…';
+
+    var initData = tg ? tg.initData : '';
+    apiPost('/api/submissions', { initData: initData, code: state.code, answers: state.answers })
+      .then(function (res) {
+        if (!res.body || res.body.ok !== true) {
+          if (res.status === 409 && res.body && res.body.submissionId) {
+            showDone('info', 'Already submitted', 'You already submitted this test — your teacher has your answers.');
+            return;
+          }
+          throw new Error((res.body && res.body.error) || 'Submission failed.');
+        }
+        showDone('ok', 'Submitted', 'Your answers were received. Your teacher will publish results once grading is complete.');
+      })
+      .catch(function (err) {
+        setText(submitError, err.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit answers';
+      });
+  }
+  submitBtn.addEventListener('click', submit);
+
+  /* ---------------- Screen 3: outcome ---------------- */
+
+  function showDone(kind, title, detail) {
+    var icons = { ok: '✅', info: 'ℹ️', error: '⚠️' };
+    setText(document.getElementById('done-icon'), icons[kind] || '');
+    setText(document.getElementById('done-title'), title);
+    setText(document.getElementById('done-detail'), detail);
+    showScreen('done');
+    if (tg) { try { tg.close(); } catch (e) {} }
+  }
+
+  showScreen('entry');
+})();
+</script>
+</body>
+</html>

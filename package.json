@@ -1,0 +1,23 @@
+{
+  "name": "rasch-test-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Lightweight Telegram bot for test evaluation with a fixed-anchor Rasch (IRT) scoring engine",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "webapp": "node --env-file=.env src/webapp-index.js",
+    "doctor": "node --env-file=.env src/tools/doctor.js",
+    "migrate": "node --env-file=.env src/db/migrate.js",
+    "seed": "node --env-file=.env src/tools/seed.js",
+    "verify:anchors": "node src/tools/verify-anchors.js",
+    "verify:nc55": "node src/tools/verify-nc55.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "grammy": "^1.30.0"
+  }
+}
