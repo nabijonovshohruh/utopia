@@ -61,7 +61,7 @@ and refuse to boot with an actionable message rather than failing later as an op
 | `npm run doctor` | Preflight check of config + database; contacts nothing (loads `.env`) |
 | `npm run migrate` | Create/upgrade the SQLite schema (loads `.env`) |
 | `npm run seed` | Insert a locked custom demo test, `DEMO-101` (loads `.env`) |
-| `npm test` | 167 unit, pipeline, config, HTTP and middleware tests |
+| `npm test` | 174 unit, pipeline, config, HTTP and middleware tests |
 | `npm run verify:anchors` | Proof that volume doesn't move the scale (generic engine) |
 | `npm run verify:nc55` | Same proof at the full 55-item shape, with scattered grading + batch publish |
 
@@ -462,7 +462,11 @@ notification sent when a teacher scores or publishes also show this same registe
 - **Answer keys live in the database in plaintext.** `/key` is admin-only, but treat the
   SQLite file as sensitive and keep `ADMIN_IDS` tight.
 - **Long polling** suits a single bot instance. For multiple instances or serverless, switch
-  `bot.start()` to a webhook.
+  `bot.start()` to a webhook. A brief overlap during a redeploy (old container still polling
+  for a few seconds after the new one starts) is handled already — `src/bot/startResilient.js`
+  retries getUpdates' 409 Conflict with capped backoff instead of crashing the process, but
+  gives up and fails loudly after 10 attempts, so a genuine two-instances bug still surfaces
+  rather than retrying forever.
 - **Binary scoring only** (right/wrong, 1 point each) — see "Binary scoring only" above.
 - **Written-item grading is manual by design.** There's no "AI-grade this essay" shortcut here
   on purpose — a Rasch score is a claim about the underlying construct, and that claim is only
