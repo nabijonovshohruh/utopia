@@ -61,10 +61,19 @@ const shutdown = (signal) => {
 process.once('SIGINT', () => shutdown('SIGINT'));
 process.once('SIGTERM', () => shutdown('SIGTERM'));
 
-// `drop_pending_updates: true` clears any update backlog from before this
-// process started, but does not prevent a live getUpdates overlap with
-// another still-running process — that's what startWithPollingResilience
-// handles (see src/bot/startResilient.js for the full rationale).
+// Explicit and separate from the drop_pending_updates below: bot.start()
+// already calls deleteWebhook internally as part of its own setup, but
+// doing it here too means a failure in THIS step (e.g. a stale webhook
+// misconfigured from before this bot ever used polling) surfaces on its
+// own instead of being folded into the 409-specific retry loop below,
+// which only knows how to handle conflict errors, not arbitrary ones.
+await bot.api.deleteWebhook({ drop_pending_updates: true });
+
+// `drop_pending_updates: true` here clears any update backlog from before
+// this process started, but does not prevent a live getUpdates overlap
+// with another still-running process — that's what
+// startWithPollingResilience handles (see src/bot/startResilient.js for
+// the full rationale).
 await startWithPollingResilience(() => bot.start({ drop_pending_updates: true }), {
   isConflict: (err) => err instanceof GrammyError && err.error_code === 409,
   isShuttingDown: () => shuttingDown,
