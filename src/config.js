@@ -43,7 +43,7 @@ export const config = {
   // PORT takes priority: it's the conventional "platform assigns the port"
   // override (used by this preview tooling among others). MINIAPP_PORT is
   // the normal, stable local-dev/deploy setting.
-  miniAppPort: Number(process.env.PORT) || Number(process.env.MINIAPP_PORT) || 8787,
+  miniAppPort: Number(process.env.PORT) || Number(process.env.MINIAPP_PORT) || 8080,
   miniAppPublicUrl: (process.env.MINIAPP_PUBLIC_URL ?? '').trim() || null,
 };
 

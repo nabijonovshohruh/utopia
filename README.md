@@ -373,7 +373,8 @@ The page and its API are served from the same origin, so there's no CORS configu
 
 ### Deploying it
 
-1. `npm run webapp` starts the server (default port 8787, override with `MINIAPP_PORT`).
+1. `npm run webapp` starts the server, bound to `0.0.0.0`. Listens on `process.env.PORT` if
+   set (Railway and most platforms assign this automatically), else `MINIAPP_PORT`, else 8080.
 2. Put it behind HTTPS — Telegram refuses non-HTTPS Mini App URLs. For local testing, a tunnel
    (ngrok, Cloudflare Tunnel) pointed at the local port works; for production, any static+API
    host or a reverse proxy (Caddy/nginx) in front of the Node process.
